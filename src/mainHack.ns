@@ -94,6 +94,7 @@ async function getHackableServers(ns, servers) {
   const hostnames = Object.keys(servers);
 
   for (const Hostname of hostnames) {
+    if(Hostname === 'home') continue;
     // ns.print("Checking Host: " + Hostname)
     if (!ns.serverExists(Hostname)) {
       // ns.print("Server doesn't exist!")
