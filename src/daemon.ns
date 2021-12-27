@@ -1,0 +1,59 @@
+import * as CONFIG from 'config.ns';
+
+
+/** @param {NS} ns **/
+export async function main(ns) {
+  const overrideTarget = ns.args[0]
+  await initOnce(ns)
+
+  while (true) {
+    await initEach(ns)
+    const target = getTarget()
+    if(target){
+      if (!ns.isRunning('test3.ns', 'home', target)) {
+        ns.tprint('Switching to best target ' + target)
+        ns.scriptKill('test3.ns', 'home')
+        ns.scriptKill('weaken.ns', 'home')
+        ns.scriptKill('grow.ns', 'home')
+        ns.scriptKill('hack.ns', 'home')
+        ns.run('test3.ns', 1, target)
+      }
+    }
+    await ns.sleep(1000);
+  }
+}
+
+/** @param {NS} ns */
+async function initOnce(ns){
+  ns.disableLog('sleep')
+  ns.run('playerServers.ns', 1)
+  await ns.sleep(1)
+  await ns.sleep(1)
+
+  ns.run('blackMarket.ns', 1)
+  await ns.sleep(1)
+  await ns.sleep(1)
+}
+
+/** @param {NS} ns */
+async function initEach(ns){
+    ns.run('spider.ns', 1, 'bestServers.ns')
+    await ns.sleep(1)
+    await ns.sleep(1)
+}
+
+/**
+ * @param {string} overrideTarget
+ */
+function getTarget(overrideTarget) {
+  if (overrideTarget) return overrideTarget
+
+  const bestTargets = CONFIG.getBestTargets()
+  if (!bestTargets.length) return
+
+  return bestTargets.shift()
+}
+
+export function autocomplete(data) {
+  return [...data.servers]
+}
