@@ -1,0 +1,91 @@
+import * as CONFIG from 'config.ns';
+
+const settings = {
+  minSecurityWeight: 100
+}
+
+/** @param {NS} ns **/
+export async function main(ns) {
+    const bestServers = await getHackableServers(ns);
+    const str = JSON.stringify(bestServers, null, 2);
+    if((ns.args[0]+'') === 'true') ns.tprint(str)
+    localStorage.setItem(CONFIG.BEST_TARGETS_KEY, str)
+}
+
+/** @param {NS} ns **/
+export async function getHackableServers(ns) {
+    const serverMap = getItem("BB_SERVER_MAP")
+    const hackableServers = await parseHackableServers(ns, serverMap.servers)
+    return hackableServers
+}
+
+function getItem(key) {
+  let item = localStorage.getItem(key)
+  return item ? JSON.parse(item) : undefined
+}
+
+const hackPrograms = ['BruteSSH.exe', 'FTPCrack.exe', 'relaySMTP.exe', 'HTTPWorm.exe', 'SQLInject.exe']
+const hackScripts = ['hack.ns', 'grow.ns', 'weaken.ns']
+
+function getPlayerDetails(ns) {
+  let portHacks = 0
+
+  hackPrograms.forEach((hackProgram) => {
+    if (ns.fileExists(hackProgram, 'home')) {
+      portHacks += 1
+    }
+  })
+
+  return {
+    hackingLevel: ns.getHackingLevel(),
+    portHacks,
+  }
+}
+
+/** @param {NS} ns **/
+async function parseHackableServers(ns, servers) {
+  const playerDetails = getPlayerDetails(ns)
+  const hackableServers = []
+  const hostnames = Object.keys(servers);
+
+  for (const Hostname of hostnames) {
+    // if(Hostname === 'home') continue;
+    // ns.print("Checking Host: " + Hostname)
+    if (!ns.serverExists(Hostname)) {
+      // ns.print("Server doesn't exist!")
+      continue;
+    }
+    if (servers[Hostname].ram < 2) {
+      // ns.print("Doesn't have enough RAM! (" + servers[Hostname].ram + ")")
+      continue;
+    };
+    if (!ns.hasRootAccess(Hostname)) {
+      // ns.print("No root access!")
+      continue;
+    }
+    if (!(ns.hasRootAccess(Hostname) || servers[Hostname].ports <= playerDetails.portHacks)) {
+      // ns.print("Not enough port hacks! (Has: " + servers[Hostname].ports + " | Player: " + playerDetails.portHacks)
+      continue;
+    }
+    if (Hostname === 'home') {
+      hackableServers.push(Hostname)
+    } else {
+      if (!await ns.hasRootAccess(Hostname)) {
+        for (const hackProgram of hackPrograms) {
+          if (await ns.fileExists(hackProgram, 'home')) {
+            await ns[hackProgram.split('.').shift().toLocaleLowerCase()](Hostname)
+          }
+        }
+        await ns.nuke(Hostname)
+      }
+      await ns.scp(hackScripts, Hostname)
+      hackableServers.push(Hostname);
+    }
+  }
+
+  ns.print(`Found ${hackableServers.length} hackable servers.`)
+
+  CONFIG.setHackableServers(hackableServers);
+
+  return hackableServers
+}
