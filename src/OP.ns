@@ -1,0 +1,134 @@
+import * as formulas from 'formulas.ns'
+
+const HACK_SCRIPT = 'hack.ns';
+const GROW_SCRIPT = 'grow.ns';
+const WEAKEN_SCRIPT = 'weaken.ns';
+
+/** @param {NS} ns **/
+function freeRam(ns, hostname){
+	const target = hostname || ns.getHostname()
+	return ns.getServerMaxRam(target) - ns.getServerUsedRam(target)
+}
+
+/** @param {NS} ns **/
+async function primeSecurity(ns, target){
+	while(ns.getServerSecurityLevel(target) > ns.getServerMinSecurityLevel(target)){
+		const weakenThreads = Math.floor(freeRam(ns) / ns.getScriptRam(WEAKEN_SCRIPT))
+		if(weakenThreads < 1) {
+			await ns.sleep(1000)
+			continue;
+		}
+		ns.print("FREE   RAM: " + freeRam(ns))
+		ns.print("WEAKEN RAM: " + ns.getScriptRam(WEAKEN_SCRIPT))
+		ns.print("WEAKEN  # : " + weakenThreads)
+		ns.exec(WEAKEN_SCRIPT, ns.getHostname(), weakenThreads, target, 0);
+		await ns.sleep(formulas.weakenTime(target, ns.getPlayer()) + 100)
+	}
+}
+
+/** @param {NS} ns **/
+async function primeMoney(ns, target){
+	while(ns.getServerMoneyAvailable(target) < ns.getServerMaxMoney(target)){
+		const growThreads = Math.floor(freeRam(ns) / ns.getScriptRam(GROW_SCRIPT))
+		if(growThreads < 1) {
+			await ns.sleep(1000)
+			continue;
+		}
+		ns.print("FREE   RAM: " + freeRam(ns))
+		ns.print("GROW RAM  : " + ns.getScriptRam(GROW_SCRIPT))
+		ns.print("GROW    # : " + growThreads)
+		ns.exec(GROW_SCRIPT, ns.getHostname(), growThreads, target, 0);
+		await ns.sleep(formulas.growTime(target, ns.getPlayer()) + 100)
+		await primeSecurity(ns, target)
+	}
+}
+
+
+/** @param {NS} ns **/
+export async function primeServer(ns, target){
+	await primeSecurity(ns, target)
+	await primeMoney(ns, target)
+}
+
+/** @param {NS} ns **/
+export async function main(ns) {
+	var server = ns.args[0];   //Host to hack
+	var server2 = ns.getHostname(); //Server to run scripts on
+
+	// Making sure min security level + max money
+	// await primeServer(ns, server)
+
+	//ns.print('Priming complete. Initiating hacks...')
+	
+	var i = 0;
+	var c = 0;
+	var player = ns.getPlayer();
+	var fserver = ns.getServer(server);
+	var contstantRam = ns.getScriptRam("OP.ns");
+	var hackscriptRam = ns.getScriptRam(HACK_SCRIPT);
+	var growscriptRam = ns.getScriptRam(GROW_SCRIPT);
+	var weakenscriptRam = ns.getScriptRam(WEAKEN_SCRIPT);
+	var maxRam = (ns.getServerMaxRam(server2) - contstantRam);
+	ns.print(`RAM Stats --- Constant RAM: ${contstantRam}, maxRam: ${maxRam}`)
+	var weakenThreads = (2000 - ((ns.getServerMinSecurityLevel(server)) / 0.05));
+	var maxGrowThreads = ((maxRam / growscriptRam) - (weakenscriptRam * 2000));
+
+	var HPercent = (formulas.hackPercent(fserver, player) * 100);
+	var GPercent = (formulas.growPercent(fserver, 1, player, 1, ns));
+	var WeakenTime = (formulas.minWeakenTime(fserver, player));
+	var GrowTime = (formulas.minGrowTime(fserver, player));
+	var HackTime = (formulas.minHackTime(fserver, player));
+
+	ns.tprint('GPercent      : ' + GPercent)
+	var growThreads = Math.round(((5 / (GPercent - 1))));
+	ns.tprint(`Math.round(((5 / (${GPercent} - 1))))`)
+	var hackThreads = Math.round((50 / HPercent));  //Getting the amount of threads I need to hack 50% of the funds
+	weakenThreads = Math.round((weakenThreads - (growThreads * 0.004))); //Getting required threads to fully weaken the server
+
+	ns.tprint(`W#:${weakenThreads}, G#: ${growThreads}, H#: ${hackThreads}`)
+	
+	var totalRamForRun = (hackscriptRam * hackThreads) + (growscriptRam * growThreads) + (weakenscriptRam * weakenThreads) //Calculating how much RAM is used for a single run
+	var sleepTime = (WeakenTime / (maxRam / totalRamForRun)) //finding how many runs this server can handle and setting the time between run execution
+
+
+	var shiftCount = maxRam / totalRamForRun;
+	var offset = sleepTime / 2
+	var gOffset = offset / 4
+	var hOffset = offset / 2
+	
+	return
+
+	while (true) {
+		const actualWeakenTime = ns.getWeakenTime(server) * weakenThreads;
+		const actualGrowTime = ns.getGrowTime(server) * growThreads;
+		const actualHackTime = ns.getHackTime(server) * hackThreads;
+
+		var wsleep = 0 //At one point I made the weaken call sleep so I've kept it around
+		var gsleep = ((WeakenTime - GrowTime - gOffset)) //Getting the time to have the Growth execution sleep, then shaving some off to beat the weaken execution
+		var hsleep = ((WeakenTime - HackTime - hOffset)) //Getting time for hack, shaving off more to make sure it beats both weaken and growth
+		var UsedRam = ns.getServerUsedRam(server2)
+		var availableRam = maxRam - UsedRam
+
+		ns.print(`Ram Stats --- Required: ${totalRamForRun}, available ${availableRam} | Missing: ${totalRamForRun - availableRam}`)
+		if (totalRamForRun > availableRam){
+			ns.print(`Not enough RAM! Required: ${totalRamForRun}, available ${availableRam} | Missing: ${totalRamForRun - availableRam}`)
+			await ns.sleep(100)
+			continue
+		}
+		i++
+
+		ns.exec(WEAKEN_SCRIPT, server2, weakenThreads, server, wsleep, i);
+		ns.exec(GROW_SCRIPT, server2, growThreads, server, gsleep, i);
+		ns.exec(HACK_SCRIPT, server2, hackThreads, server, hsleep, i);
+
+		ns.tprint(`WT:${Math.floor(actualWeakenTime)/1000/60} | GT:${Math.floor(actualGrowTime)/1000/60} | HT:${Math.floor(actualHackTime/1000/60)}`)
+
+		if (c < shiftCount) {
+			await ns.sleep(sleepTime)
+			c++
+		} else {
+			await ns.sleep(sleepTime + offset);
+			c = 0;
+		}
+	}
+}
