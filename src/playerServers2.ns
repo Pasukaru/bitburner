@@ -1,0 +1,125 @@
+import { CONSTANTS } from 'Constants.ns'
+
+const NEW_MIN_RAM = 32
+
+/** @param {NS} ns */
+export async function main(ns) {
+  ns.disableLog('ALL')
+
+  if(ns.args[0] === "show"){
+    ns.tprint(getPurchasedServers(ns))
+    return
+  }
+
+  while (true) {
+    if (allUpgraded(getPurchasedServers(ns))) {
+      ns.tprint('All servers upgraded. Exiting.')
+      ns.exit()
+      return
+    }
+
+    await upgradeServers(ns)
+    await purchaseServers(ns)
+
+    await ns.sleep(10000)
+  }
+}
+
+/** 
+ * @param {NS} ns
+ * */
+async function upgradeServers(ns) {
+  const servers = getPurchasedServers(ns)
+  for (const server of servers) {
+    const host = server.hostname
+    const ram = maxAffordable(ns)
+    if (ram < 0) return
+    if (server.maxRam >= ram) continue
+
+    ns.tprint(`Upgrading server ${host} RAM to ${ram}`)
+    ns.killall(host)
+    while (!ns.deleteServer(host)) {
+      ns.killall(host)
+      await ns.sleep(1)
+    }
+
+    ns.purchaseServer(host, ram)
+  }
+}
+
+/** 
+ * @param {NS} ns
+ * */
+async function purchaseServers(ns) {
+  var servers = getPurchasedServers(ns)
+  while (!allPurchased(servers)) {
+    const ram = maxAffordable(ns)
+    if (ram < 0) return
+    const host = 'home-' + String(servers.length).padStart(Math.ceil(Math.log10(CONSTANTS.PurchasedServerLimit + 1)), '0')
+    ns.tprint(`Purchasing server ${host} with ${ram} RAM`)
+    ns.purchaseServer(host, ram)
+    servers = getPurchasedServers(ns)
+  }
+}
+
+/** 
+ * @param {NS} ns 
+ * */
+function getPurchasedServers(ns) {
+  const servers = ns.scan('home')
+    .filter(host => host.startsWith('home-'))
+    .map(host => getServerCheap(ns, host))
+
+  servers.sort((a, b) => a.hostname > b.hostname ? 1 : -1)
+
+  // ns.tprint(JSON.stringify(servers))
+
+  return servers
+}
+
+/** 
+ * @param {Array<Server>} servers 
+ * */
+function allPurchased(servers) {
+  return servers.length >= CONSTANTS.PurchasedServerLimit
+}
+
+/** 
+ * @param {Array<Server>} servers 
+ * */
+function allUpgraded(servers) {
+  if (!allPurchased(servers)) return false
+  return servers.every(server => server.maxRam >= CONSTANTS.PurchasedServerMaxRam)
+}
+
+/** 
+ * @param {NS} ns 
+ * @return number
+ * */
+function maxAffordable(ns) {
+  if (canAffort(ns, CONSTANTS.PurchasedServerMaxRam)) return CONSTANTS.PurchasedServerMaxRam
+  if (!canAffort(ns, NEW_MIN_RAM)) return -1
+  const gbAffordable = ns.getServerMoneyAvailable('home') / CONSTANTS.BaseCostFor1GBOfRamServer
+  const log2Affordable = Math.floor(Math.log2(gbAffordable))
+  return Math.pow(2, log2Affordable)
+}
+
+/** 
+ * @param {NS} ns 
+ * @param {int} ram
+ * */
+function canAffort(ns, ram) {
+  return ns.getServerMoneyAvailable('home') > ram * CONSTANTS.BaseCostFor1GBOfRamServer
+}
+
+/** 
+ * @param {NS} ns
+ * @param {string} host
+ * @return {Server} server
+ *  **/
+function getServerCheap(ns, host) {
+  return {
+    hostname: host,
+    maxRam: ns.getServerMaxRam(host)
+  }
+}
