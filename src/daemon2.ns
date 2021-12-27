@@ -1,0 +1,84 @@
+import * as CONFIG from 'config.ns';
+
+const ALWAYS_HACK = 'foodnstuff'
+
+/** @param {NS} ns **/
+export async function main(ns) {
+  await initOnce(ns)
+
+  while (true) {
+    await initEach(ns)
+    await checkHacks(ns)
+    await ns.sleep(20000)
+  }
+}
+
+/** @param {NS} ns */
+async function checkHacks(ns){
+  const originalTargets = CONFIG.getBestTargets()
+  const targets = originalTargets.slice(0, 3)
+  if(targets.indexOf(ALWAYS_HACK) !== -1) targets.splice(targets.indexOf(ALWAYS_HACK), 1)
+  if(originalTargets.indexOf(ALWAYS_HACK) !== -1) targets.unshift('foodnstuff')
+  if(!targets.length) {
+    ns.tprint('No hack targets found')
+    return
+  }
+
+  const hosts = CONFIG.getHackableServers()
+  if(!hosts.length){
+    ns.tprint('No hack hosts found')
+    return
+  }
+
+  ns.print('targets:', targets)
+  ns.print('hosts:', hosts)
+
+  // Update currently running hack
+  let i = 0
+  for(; i < Math.min(5, targets.length, hosts.length); i++){
+    const targetHostname = targets[i]
+    const sourceHostname = hosts[i]
+    if(ns.isRunning('primeThenHack.ns', sourceHostname, targetHostname)) continue
+    if(ns.isRunning('mainHack.ns', sourceHostname, targetHostname)) continue
+    ns.tprint(`HACK: ${sourceHostname} => ${targetHostname}`)
+    killHackScripts(ns, hosts[i])
+    if(sourceHostname !== 'home'){
+      await ns.scp(ns.ls('home', '.ns'), 'home', sourceHostname)
+    }
+    ns.exec('primeThenHack.ns', sourceHostname, 1, targetHostname)
+  }
+
+  // Make sure the other hosts run run anything else
+  for(; i < hosts.length; i++){
+    killHackScripts(ns, hosts[i])
+  }
+}
+
+
+/** @param {NS} ns */
+function killHackScripts(ns, host){
+    ns.scriptKill('primeThenHack.ns', host)
+    ns.scriptKill('mainHack.ns', host)
+    ns.scriptKill('weaken.ns', host)
+    ns.scriptKill('grow.ns', host)
+    ns.scriptKill('hack.ns', host)
+}
+
+/** @param {NS} ns */
+async function initOnce(ns){
+  ns.disableLog('sleep')
+  ns.exec('playerServers2.ns', 'home', 1)
+  await ns.sleep(1)
+  await ns.sleep(1)
+
+  ns.exec('blackMarket.ns', 'home', 1)
+  await ns.sleep(1)
+  await ns.sleep(1)
+}
+
+/** @param {NS} ns */
+async function initEach(ns){
+    ns.exec('spider.ns', 'home', 1, 'bestServers.ns')
+    await ns.sleep(1)
+    await ns.sleep(1)
+}
