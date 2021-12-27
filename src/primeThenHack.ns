@@ -1,0 +1,13 @@
+import { primeServer } from 'primeServer.ns'
+
+/** @param {NS} ns **/
+export async function main(ns) {
+    const target = ns.args[0]
+	if(!ns.serverExists(target)){
+		ns.tprint(`Scheduled to hack a server that doesn't exist: ${target}`)
+		return
+	}
+	await primeServer(ns, target)
+	ns.run('mainHack.ns', 1, target)
+	ns.exit()
+}
