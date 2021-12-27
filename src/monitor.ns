@@ -1,0 +1,41 @@
+import * as formulas from 'formulas.ns'
+
+const SECOND = 1000
+const MINUTE = SECOND * 60
+const HOUR = MINUTE * 60
+
+function formatTime(milliseconds){
+	var h = Math.floor(milliseconds/HOUR)
+	var m = Math.floor((milliseconds - h*HOUR)/MINUTE)
+	var s = Math.floor((milliseconds - h*HOUR - m*MINUTE)/SECOND)
+	var ms = Math.ceil(milliseconds - h*HOUR - m*MINUTE - s*SECOND)
+	if(h < 10) h = '0'+h
+	if(m < 10) m = '0'+m
+	if(s < 10) s = '0'+s
+	if(ms < 10) ms = '00'+ms
+	else if (ms < 100) ms = '0'+ms
+	return `${h}:${m}:${s}.${ms}`
+}
+
+/** @param {NS} ns **/
+export async function main(ns) {
+    const target = ns.args[0]
+	const interval = ns.args[1] || -1
+
+	while(true){
+		const player = ns.getPlayer()
+		const server = ns.getServer(target)
+		const stats = [
+			`M:${Math.floor(server.moneyAvailable*1000/server.moneyMax)/10}%`,
+			`S:${Math.ceil(server.hackDifficulty*10)/10}/${server.minDifficulty}`,
+			`HD:`+server.hackDifficulty,
+			`WT:${formatTime(formulas.minWeakenTime(server, player))}`,
+			`GT:${formatTime(formulas.minGrowTime(server, player))}`,
+			`HT:${formatTime(formulas.minHackTime(server, player))}`,
+		]
+		ns.tprint(stats.join(' | '))
+		if(interval < 0) return
+		await ns.sleep(interval)
+	}
+
+}
