@@ -1,0 +1,129 @@
+import * as formulas from 'formulas.ns'
+import { maxGrowAndWeaken } from 'formulas.ns'
+
+const GROW_SCRIPT = 'grow.ns';
+const WEAKEN_SCRIPT = 'weaken.ns';
+
+/** 
+ * @param {NS} ns 
+ * @param {string} target
+ * **/
+export async function primeSecurity(ns, target) {
+	while (requiresSecurityPriming(ns, target)) {
+		const targetServer = getServerCheap(ns, target)
+		const sourceServer = getServerCheap(ns, ns.getHostname())
+
+		const weakenThreads = formulas.maxWeakenThreads(sourceServer, targetServer)
+		//ns.tprint('wt: '+weakenThreads)
+		if (weakenThreads < 1) {
+			ns.print('Not enough ram to prime security. Waiting!')
+			await ns.sleep(1000)
+			continue
+		}
+		const weakenTime = formulas.weakenTime(targetServer, ns.getPlayer())
+		//ns.tprint('wtime: '+weakenTime)
+
+		ns.run(WEAKEN_SCRIPT, weakenThreads, target, 0, 'PrimingSecurity', new Date().getTime());
+		await ns.sleep(weakenTime + 5)
+	}
+}
+
+/** 
+ * @param {NS} ns 
+ * @param {string} target
+ * **/
+export async function primeMoney(ns, target) {
+	ns.print('Priming Money...')
+	while (requiresMoneyPriming(ns, target)) {
+		const targetServer = getServerCheap(ns, target)
+		const sourceServer = getServerCheap(ns, ns.getHostname())
+		const gw = maxGrowAndWeaken(ns.getPlayer(), sourceServer, targetServer)
+		if (gw.isFinished) return
+		if (!gw.canRun) {
+			ns.print('Not enough ram. Waiting!')
+			await ns.sleep(1000)
+			continue
+		}
+		ns.print(`Grows: ${gw.growThreads}, Weakens: ${gw.weakenThreads}`)
+		const weakenTime = formulas.weakenTime(targetServer, ns.getPlayer())
+
+		ns.run(GROW_SCRIPT, gw.growThreads, target, 0, 'PrimingMoney', new Date().getTime())
+		ns.run(WEAKEN_SCRIPT, gw.weakenThreads, target, 0, 'PrimingMoney', new Date().getTime())
+
+		// if (gw.willFinish) break
+
+		await ns.sleep(weakenTime + 5)
+	}
+}
+
+/** 
+ * @param {NS} ns 
+ * @param {string} target
+ * **/
+export async function primeServer(ns, target) {
+	const secRequired = requiresSecurityPriming(ns, target);
+	const moneyRequired = requiresMoneyPriming(ns, target);
+	const primingRequired = secRequired || moneyRequired
+
+	if (!primingRequired) return
+
+	ns.tprint(`Priming ${target}...`)
+
+	if (secRequired) {
+		ns.print('Priming Security...')
+		await primeSecurity(ns, target)
+	}
+
+	if (moneyRequired) {
+		await primeMoney(ns, target)
+	}
+
+	ns.tprint(`Priming of ${target} completed`)
+}
+
+/** @param {NS} ns **/
+export async function main(ns) {
+	const target = ns.args[0]
+	await primeServer(ns, target)
+}
+
+export function autocomplete(data) {
+	return [...data.servers]
+}
+
+/** 
+ * @param {NS} ns
+ * @param {string} host
+ * @return {Server} server
+ *  **/
+function getServerCheap(ns, host) {
+	return {
+		hostname: host,
+		hackDifficulty: ns.getServerSecurityLevel(host),
+		minDifficulty: ns.getServerMinSecurityLevel(host),
+		requiredHackingSkill: ns.getServerRequiredHackingLevel(host),
+		serverGrowth: ns.getServerGrowth(host),
+		moneyMax: ns.getServerMaxMoney(host),
+		moneyAvailable: ns.getServerMoneyAvailable(host),
+		maxRam: ns.getServerMaxRam(host),
+		ramUsed: ns.getServerUsedRam(host)
+	}
+}
+
+/** 
+ * @param {NS} ns 
+ * @param {string} host
+ * **/
+function requiresSecurityPriming(ns, host) {
+	const server = getServerCheap(ns, host)
+	return server.hackDifficulty > server.minDifficulty
+}
+
+/** 
+ * @param {NS} ns 
+ * @param {string} host
+ * **/
+function requiresMoneyPriming(ns, host) {
+	const server = getServerCheap(ns, host)
+	return server.moneyMax > server.moneyAvailable
+}
