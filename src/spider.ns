@@ -17,7 +17,9 @@ function getPlayerDetails(ns) {
   }
 }
 
+// Required to allocate enough ram
 function allHacks(host) {
+  if(!host) return
   ns.brutessh(host)
   ns.ftpcrack(host)
   ns.relaysmtp(host)
@@ -25,31 +27,31 @@ function allHacks(host) {
   ns.sqlinject(host)
 }
 
-function localeHHMMSS(ms = 0) {
-  if (!ms) {
-    ms = new Date().getTime()
-  }
-
-  return new Date(ms).toLocaleTimeString()
-}
-
+/** @param {NS} ns **/
 export async function main(ns) {
-  ns.tprint(`[${localeHHMMSS()}] Starting spider.ns`)
-
   const scriptToRunAfter = ns.args[0]
+  const force = ns.args[0] === "force"
+  if(force) ns.tprint('Forcing spider crawl')
 
   let hostname = ns.getHostname()
 
   if (hostname !== 'home') {
     throw new Exception('Run the script from home')
   }
+  
+  allHacks()
+
+  var homeFiles = ns.ls('home', '.ns')
+
+  const playerDetails = getPlayerDetails(ns)
+  setItem("PORT_HACKS", playerDetails.portHacks)
 
   const serverMap = { servers: {}, lastUpdate: new Date().getTime() }
   const scanArray = ['home']
 
   while (scanArray.length) {
     const host = scanArray.shift()
-
+    
     serverMap.servers[host] = {
       host,
       ports: ns.getServerNumPortsRequired(host),
@@ -57,13 +59,11 @@ export async function main(ns) {
       maxMoney: ns.getServerMaxMoney(host),
       growth: ns.getServerGrowth(host),
       minSecurityLevel: ns.getServerMinSecurityLevel(host),
-      baseSecurityLevel: ns.getServerBaseSecurityLevel(host),
-      ram: ns.getServerRam(host)[0],
-      files: ns.ls(host),
+      ram: ns.getServerMaxRam(host),
+      files: ns.ls(host)
     }
 
-    const playerDetails = getPlayerDetails(ns)
-    if (!ns.hasRootAccess(host)) {
+    if (force || !ns.hasRootAccess(host)) {
       if (serverMap.servers[host].ports <= playerDetails.portHacks && serverMap.servers[host].hackingLevel <= playerDetails.hackingLevel) {
         hackPrograms.forEach((hackProgram) => {
           if (ns.fileExists(hackProgram, 'home')) {
@@ -71,6 +71,7 @@ export async function main(ns) {
           }
         })
         ns.nuke(host)
+        await ns.scp(homeFiles, 'home', host)
       }
     }
 
@@ -141,11 +142,7 @@ export async function main(ns) {
 
   setItem(settings().keys.serverMap, serverMap)
 
-  if (!scriptToRunAfter) {
-    ns.tprint(`[${localeHHMMSS()}] Spawning mainHack.ns`)
-    ns.spawn('mainHack.ns', 1)
-  } else {
-    ns.tprint(`[${localeHHMMSS()}] Spawning ${scriptToRunAfter}`)
-    ns.spawn(scriptToRunAfter, 1)
+  if (!force && scriptToRunAfter) {
+    ns.spawn(scriptToRunAfter, 1, "Source: " + ns.getScriptName())
   }
 }
