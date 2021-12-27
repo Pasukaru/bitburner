@@ -1,0 +1,47 @@
+/** @param {NS} ns **/
+export async function main(ns) {
+	if(ns.args[0] == 'ALL') return go(ns, 'ALL')
+	if(ns.args[0]) return go(ns, ns.args[0])
+	go(ns, 'CSEC')
+	go(ns, 'avmnite-02h')
+	go(ns, 'run4theh111z')
+	go(ns, 'I.I.I.I')
+}
+
+/** @param {NS} ns **/
+function go(ns, targetServer){
+	const checked = {};
+	const path = []
+	scanTargets(ns, 'home', targetServer, path, checked, 0, targetServer === 'ALL')
+	
+	if(targetServer === 'ALL') return
+
+	path.reverse()
+	if(path.length === 0) {
+		ns.tprint(targetServer + ' not found')
+		return
+	}
+	
+	ns.tprint(targetServer + ' ===> home; ' + path.map(h => `connect ${h};`).join(' ') + ' backdoor;')
+}
+
+/** @param {NS} ns **/
+function scanTargets(ns, host, targetServer, path, checked, level, print) {
+	if(checked[host]) return false
+	checked[host] = true
+	if(print) ns.tprint(' '.repeat(level*2)+">"+host)
+
+	// ns.tprint(' '.repeat(level*2) + host)
+	const children = ns.scan(host)
+	if (children.some(c => c == targetServer)) {
+		path.push(targetServer)
+		return true
+	}
+	const correctChild = children.find(c => scanTargets(ns, c, targetServer, path, checked, level + 1, print))
+	if (correctChild) {
+		path.push(correctChild)
+		return true
+	}
+
+	return false
+}
