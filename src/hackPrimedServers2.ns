@@ -1,0 +1,103 @@
+import { spawnHackScripts } from 'functions.ns'
+import { getHackableServers } from 'config.ns'
+import * as formulas from 'formulas.ns'
+
+const hackscriptRam = 1.7
+const growscriptRam = 1.75
+const weakenscriptRam = 1.75
+
+/** @param {NS} ns **/
+export async function main(ns) {
+	await hackPrimedServer3(ns, ns.args[0])
+}
+
+/** 
+ * @param {NS} ns 
+ * @param {string} targetHostname
+ * @param {boolean} debug
+ * **/
+export async function hackPrimedServer(ns, targetHostname) {
+	const player = ns.getPlayer()
+	const targetServer = ns.getServer(targetHostname)
+
+	const WeakenTime = Math.ceil(formulas.minWeakenTime(targetServer, player));
+	const GrowTime = Math.ceil(formulas.minGrowTime(targetServer, player));
+	const HackTime = Math.ceil(formulas.minHackTime(targetServer, player));
+
+	const weakSleep = 0
+	const growSleep = WeakenTime - GrowTime - 10
+	const hackSleep = WeakenTime - HackTime - 15
+
+	const time = new Date().getTime()
+	var servers = [""]; servers = getHackableServers().filter(server => ns.serverExists(server));
+	servers.sort((a, b) => ns.getServer(b).maxRam - ns.getServer(a).maxRam)
+
+	const maxRunsPerBatch = 25
+	const sleepPerRun = 20
+	let run = 0
+
+	for (const sourceHostname of servers) {
+		if (!ns.serverExists(sourceHostname)) continue
+		var sourceServer = ns.getServer(sourceHostname)
+		const cores = sourceServer.cores
+
+		const HPercent = (formulas.hackPercent(targetServer, player) * 100);
+		const GPercent = (formulas.growPercent(targetServer, 1, player, cores, ns));
+		const growThreads = Math.floor(((5 / (GPercent - 1)))) || 1;
+		const hackThreads = Math.floor((50 / HPercent)) || 1;
+		const difficultyIncrease = hackThreads * 0.002 + growThreads * 0.004
+		const weakenThreads = Math.ceil(difficultyIncrease / formulas.weakenAnalyze(1, cores));
+
+		const totalRamForRun = (hackscriptRam * hackThreads) + (growscriptRam * growThreads) + (weakenscriptRam * weakenThreads)
+
+		const maxRam = sourceServer.maxRam
+		if (maxRam < totalRamForRun) {
+			continue
+			/*
+			// Server can only support a single batch
+			const availableRatio = availableRam / totalRamForRun
+			const availableWeakenThreads = Math.floor(weakenThreads * availableRatio)
+			const availableGrowThreads = Math.floor(growThreads * availableRatio)
+			const availableHackThreads = Math.floor(hackThreads * availableRatio)
+			if(Math.min(availableWeakenThreads, availableGrowThreads, availableHackThreads) < 1) continue
+			const totalRamForPartialRun = (hackscriptRam * availableHackThreads) + (growscriptRam * availableGrowThreads) + (weakenscriptRam * availableWeakenThreads)
+			
+			ns.tprint(`Startings scripts on ${sourceHostname}, available RAM: ${availableRam}`)
+			ns.tprint(`Partial ratio : ${availableRatio}`)
+			ns.tprint(`Partial Threads W:${availableWeakenThreads},G:${availableGrowThreads},H:${availableHackThreads}`)
+			ns.tprint(`Required RAM for partial hack from ${sourceHostname}: ` + totalRamForPartialRun)
+			const createdDifficulty = availableGrowThreads * 0.004 + availableHackThreads + 0.002
+			const removedDifficulty = availableWeakenThreads * 0.05
+			ns.tprint(`Difficulty: ${createdDifficulty} - ${removedDifficulty} = ${createdDifficulty - removedDifficulty}`)
+
+			const id = time + '-' + run
+			//ns.exec(WEAKEN_SCRIPT, sourceHostname, weakenThreads, targetHostname, weakSleep + run * sleepPerRun, id);
+			//ns.exec(GROW_SCRIPT, sourceHostname, growThreads, targetHostname, growSleep + run * sleepPerRun, id);
+			//ns.exec(HACK_SCRIPT, sourceHostname, hackThreads, targetHostname, hackSleep + run * sleepPerRun, id);
+			run++
+
+			if (run % maxRunsPerBatch === 0) {
+				await ns.sleep(1)
+			}
+			*/
+		} else {
+			// Server can support multiple batches
+			while (sourceServer.maxRam - sourceServer.ramUsed > totalRamForRun) {
+				if (!ns.serverExists(sourceHostname)) break
+				const id = time + '-' + run
+				spawnHackScripts(ns, sourceHostname, targetHostname, weakenThreads, weakSleep, growThreads, growSleep, hackThreads, hackSleep, run * sleepPerRun, id)
+				run++
+
+				if (run % maxRunsPerBatch === 0) {
+					await ns.sleep(1)
+				}
+				sourceServer = ns.getServer(sourceHostname)
+			}
+		}
+	}
+
+}
+
+export function autocomplete(data) {
+	return [...data.servers]
+}
