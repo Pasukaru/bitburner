@@ -1,0 +1,82 @@
+import { CUSTOM_CONSTANTS } from 'CustomConstants.ns'
+import { spawnHackScripts } from 'functions.ns'
+import * as formulas from 'formulas.ns'
+import * as CONFIG from 'config.ns'
+
+/** 
+ * @param {NS} ns 
+ * */
+export async function main(ns) {
+	// disableLogs(ns)
+	await ns.sleep(1000)
+	await hackPrimedServer(ns)
+	ns.run('spider.ns', 1, 'weakHack.ns')
+}
+
+/** 
+ * @param {NS} ns 
+ * @param {string} targetHostname
+ * **/
+export async function hackPrimedServer(ns) {
+	const targetHostname = 'foodnstuff'
+	const player = getPlayerCheap(ns)
+	const targetServer = getServerCheap(ns, targetHostname)
+	const WeakenTime = Math.ceil(formulas.weakenTime(targetServer, player));
+	const GrowTime = Math.ceil(formulas.growTime(targetServer, player));
+	const HackTime = Math.ceil(formulas.hackTime(targetServer, player));
+
+	const HackOffset = 10
+	const GrowOffset = 5
+
+	for (const sourceHostname of CONFIG.getHackableServers()) {
+		const sourceServer = getServerCheap(ns, sourceHostname)
+		const freeRam = sourceServer.maxRam - sourceServer.ramUsed
+
+		const totalThreads = freeRam / Math.max(CUSTOM_CONSTANTS.WeakenScriptRam, CUSTOM_CONSTANTS.GrowScriptRam, CUSTOM_CONSTANTS.HackScriptRam)
+		if(totalThreads < 3) continue
+		const scriptThreads = Math.floor(totalThreads / 3)
+
+		const weakSleep = 0
+		const growSleep = weakSleep + WeakenTime - GrowTime - GrowOffset
+		const hackSleep = weakSleep + WeakenTime - HackTime - HackOffset
+		spawnHackScripts(ns, sourceHostname, targetHostname, scriptThreads, weakSleep, scriptThreads, growSleep, scriptThreads, hackSleep, 0)
+	}
+
+	await ns.sleep(WeakenTime + 50)
+}
+
+/** 
+ * @param {NS} ns
+ * @return {Player} player
+ *  **/
+function getPlayerCheap(ns) {
+	return ns.getPlayer()
+}
+
+/** 
+ * @param {NS} ns
+ * @param {string} host
+ * @return {Server} server
+ *  **/
+function getServerCheap(ns, host) {
+	return ns.getServer(host)
+}
+
+/** 
+ * @param {NS} ns 
+ * */
+function disableLogs(ns) {
+	ns.disableLog("disableLog")
+	ns.disableLog("sleep")
+	ns.disableLog("exec")
+	ns.disableLog("getServerGrowth")
+	ns.disableLog("getServerSecurityLevel")
+	ns.disableLog("getServerMinSecurityLevel")
+	ns.disableLog("getServerRequiredHackingLevel")
+	ns.disableLog("getServerMaxRam")
+	ns.disableLog("getServerUsedRam")
+}
+
+export function autocomplete(data) {
+	return [...data.servers]
+}
