@@ -1,0 +1,35 @@
+const MONEY_FACTOR = 1/10
+
+/** @param {NS} ns **/
+export async function main(ns) {
+	function moneyAvailable() {
+		return ns.getServerMoneyAvailable("home") * MONEY_FACTOR;
+	}
+	var nodes = 0;
+	var ref = 0;
+	ns.disableLog("ALL");
+	while (true) {
+		await ns.sleep(1000);
+		//buy a node if we have more than twice the money needed
+		if (ns.hacknet.getPurchaseNodeCost() < moneyAvailable()) {
+			ref = ns.hacknet.purchaseNode();
+			ns.print("bought node hn-" + ref);
+		}
+		nodes = ns.hacknet.numNodes()
+		for (var i = 0; i < nodes; i++) {
+			var mod = ns.hacknet.getNodeStats(i).level % 10;
+			if (ns.hacknet.getLevelUpgradeCost(i, 10 - mod) < moneyAvailable()) {
+				ns.hacknet.upgradeLevel(i, 10 - mod);
+				ns.print("node hn-" + i + " leveled up");
+			}
+			if (ns.hacknet.getRamUpgradeCost(i) < moneyAvailable()) {
+				ns.hacknet.upgradeRam(i);
+				ns.print("node hn-" + i + " ram upgraded");
+			}
+			if (ns.hacknet.getCoreUpgradeCost(i) < moneyAvailable()) {
+				ns.hacknet.upgradeCore(i);
+				ns.print("node hn-" + i + " core upgraded");
+			}
+		}
+	}
+}
