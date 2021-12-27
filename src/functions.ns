@@ -1,0 +1,144 @@
+import * as formulas from 'formulas.ns'
+import { getHackableServers } from 'config.ns'
+
+const HACK_SCRIPT = 'hack.ns';
+const GROW_SCRIPT = 'grow.ns';
+const WEAKEN_SCRIPT = 'weaken.ns';
+
+
+export function localeHHMMSS(ms = 0) {
+	if (!ms) {
+		ms = new Date().getTime()
+	}
+
+	return new Date(ms).toLocaleTimeString()
+}
+/** 
+ * @param {NS} ns 
+ * @param {string} targetHostname
+ * **/
+export function hackPrimedServer(ns, targetHostname) {
+	var player = ns.getPlayer()
+	var sourceHostname = ns.getHostname()
+	var targetServer = ns.getServer(targetHostname)
+	var contstantRam = ns.getScriptRam("OP.ns");
+	var hackscriptRam = ns.getScriptRam(HACK_SCRIPT);
+	var growscriptRam = ns.getScriptRam(GROW_SCRIPT);
+	var weakenscriptRam = ns.getScriptRam(WEAKEN_SCRIPT);
+	var maxRam = (ns.getServerMaxRam(sourceHostname) - contstantRam);
+	// ns.print(`RAM Stats --- Constant RAM: ${contstantRam}, maxRam: ${maxRam}`)
+
+	var HPercent = (formulas.hackPercent(targetServer, player) * 100);
+	var GPercent = (formulas.growPercent(targetServer, 1, player, 1, ns));
+	// ns.tprint('GPercent      : ' + GPercent)
+
+	var WeakenTime = Math.ceil(formulas.minWeakenTime(targetServer, player));
+	var GrowTime = Math.ceil(formulas.minGrowTime(targetServer, player));
+	var HackTime = Math.ceil(formulas.minHackTime(targetServer, player));
+
+	var growThreads = Math.ceil(((5 / (GPercent - 1))));
+	// ns.print(`Math.ceil(((5 / (${GPercent} - 1))))`)
+	var hackThreads = Math.ceil((50 / HPercent));
+	const difficultyIncrease = hackThreads * 0.002 + growThreads * 0.004
+	const weakenThreads = Math.ceil(difficultyIncrease / 0.05);
+	// ns.tprint(`W#:${weakenThreads}, G#: ${growThreads}, H#: ${hackThreads}`)
+
+	// ns.tprint(`Difficulty increase from ${hackThreads} hacks and ${growThreads} grows: ${difficultyIncrease}`)
+	// ns.tprint(`${weakenThreads} weakens will reduce difficulty by ${weakenThreads * 0.05}`)
+
+	var totalRamForRun = (hackscriptRam * hackThreads) + (growscriptRam * growThreads) + (weakenscriptRam * weakenThreads)
+
+	// ns.tprint('Grow Time      : ' + GrowTime / 1000)
+	// ns.tprint('Weaken Time    : ' + WeakenTime / 1000)
+	var weakSleep = 0
+	var growSleep = WeakenTime - GrowTime - 10
+	// ns.tprint('Grow Sleep Time: ' + growSleep / 1000)
+	// ns.tprint('Grow Total Time: ' + (growSleep + GrowTime) / 1000)
+	var hackSleep = WeakenTime - HackTime - 15
+
+	var UsedRam = ns.getServerUsedRam(sourceHostname)
+	var availableRam = maxRam - UsedRam
+	// ns.tprint('Hack Sleep Time: ' + hackSleep / 1000)
+	// ns.tprint('Hack Total Time: ' + (hackSleep + HackTime) / 1000)
+
+	// ns.print(`W#:${weakenThreads}, G#: ${growThreads}, H#: ${hackThreads}`)
+
+	if (totalRamForRun > availableRam) {
+		ns.print(`Not enough RAM! Required: ${totalRamForRun}, available ${availableRam} | Missing: ${totalRamForRun - availableRam}`)
+		return
+	}
+
+	const time = new Date().getTime()
+	ns.run(WEAKEN_SCRIPT, weakenThreads, targetHostname, weakSleep, time);
+	ns.run(GROW_SCRIPT, growThreads, targetHostname, growSleep, time);
+	ns.run(HACK_SCRIPT, hackThreads, targetHostname, hackSleep, time);
+}
+
+
+/** 
+ * @param {NS} ns 
+ * @param {string} targetHostname
+ * **/
+export async function hackPrimedServer2(ns, targetHostname) {
+	const player = ns.getPlayer()
+	const sourceHostname = ns.getHostname()
+	const targetServer = ns.getServer(targetHostname)
+	const contstantRam = ns.getScriptRam("OP.ns");
+	const hackscriptRam = ns.getScriptRam(HACK_SCRIPT);
+	const growscriptRam = ns.getScriptRam(GROW_SCRIPT);
+	const weakenscriptRam = ns.getScriptRam(WEAKEN_SCRIPT);
+	const maxRam = (ns.getServerMaxRam(sourceHostname) - contstantRam);
+
+	const HPercent = (formulas.hackPercent(targetServer, player) * 100);
+	const GPercent = (formulas.growPercent(targetServer, 1, player, 1, ns));
+
+	const WeakenTime = Math.ceil(formulas.minWeakenTime(targetServer, player));
+	const GrowTime = Math.ceil(formulas.minGrowTime(targetServer, player));
+	const HackTime = Math.ceil(formulas.minHackTime(targetServer, player));
+
+	const growThreads = Math.ceil(((5 / (GPercent - 1))));
+	const hackThreads = Math.ceil((50 / HPercent));
+	const difficultyIncrease = hackThreads * 0.002 + growThreads * 0.004
+	const weakenThreads = Math.ceil(difficultyIncrease / 0.05);
+
+	const totalRamForRun = (hackscriptRam * hackThreads) + (growscriptRam * growThreads) + (weakenscriptRam * weakenThreads)
+
+	const weakSleep = 0
+	const growSleep = WeakenTime - GrowTime - 10
+	const hackSleep = WeakenTime - HackTime - 15
+
+	const UsedRam = ns.getServerUsedRam(sourceHostname)
+	const availableRam = maxRam - UsedRam
+
+	if (totalRamForRun > availableRam) {
+		ns.print(`Not enough RAM! Required: ${totalRamForRun}, available ${availableRam} | Missing: ${totalRamForRun - availableRam}`)
+		return
+	}
+
+	const maxRunsPerBatch = 25
+	const sleepPerRun = 20
+	let run = 0
+	while (ns.getServerMaxRam(sourceHostname) - ns.getServerUsedRam(sourceHostname) > totalRamForRun) {
+		const maxRunsByRam = Math.floor((ns.getServerMaxRam(sourceHostname) - ns.getServerUsedRam(sourceHostname)) / totalRamForRun)
+		const runsThisBatch = Math.min(maxRunsPerBatch, maxRunsByRam)
+		const time = new Date().getTime()
+
+		for (let runNumber = 0; runNumber < runsThisBatch; runNumber++) {
+			const id = time + '-' + run
+			ns.run(WEAKEN_SCRIPT, weakenThreads, targetHostname, weakSleep + run * sleepPerRun, id);
+			ns.run(GROW_SCRIPT, growThreads, targetHostname, growSleep + run * sleepPerRun, id);
+			ns.run(HACK_SCRIPT, hackThreads, targetHostname, hackSleep + run * sleepPerRun, id);
+			run++
+		}
+
+		if (runsThisBatch >= maxRunsPerBatch) {
+			await ns.sleep(1)
+		}
+	}
+}
+
+export function spawnHackScripts(ns, sourceHostname, targetHostname, wt, ws, gt, gs, ht, hs, sleepOffset, id = new Date().getTime()+Math.random()){
+	ns.exec(WEAKEN_SCRIPT, sourceHostname, wt, targetHostname, ws + sleepOffset, id);
+	ns.exec(GROW_SCRIPT, sourceHostname, gt, targetHostname, gs + sleepOffset, id);
+	ns.exec(HACK_SCRIPT, sourceHostname, ht, targetHostname, hs + sleepOffset, id);
+}
