@@ -1,0 +1,147 @@
+import { CUSTOM_CONSTANTS } from 'CustomConstants.ns'
+import { spawnHackScripts } from 'functions.ns'
+import { getHackableServers } from 'config.ns'
+import * as formulas from 'formulas.ns'
+
+/** 
+ * @param {NS} ns
+ * @return {Player} player
+ *  **/
+function getPlayerCheap(ns) {
+	return ns.getPlayer()
+}
+
+/** 
+ * @param {NS} ns
+ * @param {string} host
+ * @return {Server} server
+ *  **/
+function getServerCheap(ns, host) {
+	return {
+		hostname: host,
+		requiredHackingSkill: ns.getServerRequiredHackingLevel(host),
+		minDifficulty: ns.getServerMinSecurityLevel(host),
+		hackDifficulty: ns.getServerSecurityLevel(host),
+		serverGrowth: ns.getServerGrowth(host),
+		maxRam: ns.getServerMaxRam(host),
+		ramUsed: ns.getServerUsedRam(host)
+	}
+}
+
+
+/** 
+ * @param {NS} ns 
+ * @param {string} targetHostname
+ * @param {boolean} debug
+ * **/
+export async function hackPrimedServer(ns, targetHostname) {
+	ns.disableLog("disableLog")
+	ns.disableLog("getServerGrowth")
+	ns.disableLog("getServerSecurityLevel")
+	ns.disableLog("getServerMinSecurityLevel")
+	ns.disableLog("getServerRequiredHackingLevel")
+
+	const player = getPlayerCheap(ns)
+	const targetServer = getServerCheap(ns, targetHostname)
+
+	const WeakenTime = Math.ceil(formulas.minWeakenTime(targetServer, player));
+	const GrowTime = Math.ceil(formulas.minGrowTime(targetServer, player));
+	const HackTime = Math.ceil(formulas.minHackTime(targetServer, player));
+
+	const weakSleep = 0
+	const growSleep = WeakenTime - GrowTime - 10
+	const hackSleep = WeakenTime - HackTime - 15
+
+	const time = new Date().getTime()
+	var servers = [""]; servers = getHackableServers().filter(server => ns.serverExists(server));
+	servers.sort((a, b) => getServerCheap(ns, b).maxRam - getServerCheap(ns, a).maxRam)
+
+	const maxRunsPerBatch = 25
+	const sleepPerRun = 20
+	let run = 0
+
+	ns.print('SERVERS:' + servers)
+
+	for (const sourceHostname of servers) {
+		ns.print("Checking " + sourceHostname)
+		if (!ns.serverExists(sourceHostname)) continue
+		var sourceServer = getServerCheap(ns, sourceHostname)
+		const cores = sourceServer.cores
+
+		const HPercent = (formulas.hackPercent(targetServer, player) * 100);
+		const GPercent = (formulas.growPercent(targetServer, 1, player, cores, ns));
+		const growThreads = Math.floor(((5 / (GPercent - 1)))) || 1;
+		const hackThreads = Math.floor((50 / HPercent)) || 1;
+		const difficultyIncrease = hackThreads * 0.002 + growThreads * 0.004
+		const weakenThreads = Math.ceil(difficultyIncrease / formulas.weakenAnalyze(1, cores));
+
+		const totalRamForRun = (CUSTOM_CONSTANTS.HackScriptRam * hackThreads)
+			+ (CUSTOM_CONSTANTS.GrowScriptRam * growThreads)
+			+ (CUSTOM_CONSTANTS.WeakenScriptRam * weakenThreads)
+
+		const maxRam = sourceServer.maxRam
+		if (totalRamForRun > maxRam) {
+			ns.print("Not enough ram on " + targetServer.hostname+ " - Required: " + totalRamForRun + " has: " + maxRam)
+			continue;
+		}
+
+		// ns.print("Starting for " + sourceServer.hostname)
+		// ns.print("weakenThreads: " + weakenThreads)
+		// ns.print("weakSleep: " + weakSleep)
+		// ns.print("growThreads: " + growThreads)
+		// ns.print("growSleep: " + growSleep)
+		// ns.print("hackThreads: " + hackThreads)
+		// ns.print("hackSleep: " + hackSleep)
+		// ns.print("sourceServer.maxRam: " + sourceServer.maxRam)
+		// ns.print("sourceServer.ramUsed: " + sourceServer.ramUsed)
+		// ns.print("totalRamForRun: " + totalRamForRun)
+
+		// Server can support at least 1 full batch
+		while (sourceServer.maxRam - sourceServer.ramUsed > totalRamForRun) {
+			if (!ns.serverExists(sourceHostname)) break
+			ns.print('Spawning hack scripts...')
+			const id = time + '-' + run
+			spawnHackScripts(ns, sourceHostname, targetHostname, weakenThreads, weakSleep, growThreads, growSleep, hackThreads, hackSleep, run * sleepPerRun, id)
+			run++
+
+			if (run % maxRunsPerBatch === 0) {
+				await ns.sleep(1)
+			}
+			sourceServer = getServerCheap(ns, sourceHostname)
+		}
+
+	}
+
+}
+
+export function autocomplete(data) {
+	return [...data.servers]
+}
+
+/*
+			// Server can only support a single batch
+			const availableRatio = availableRam / totalRamForRun
+			const availableWeakenThreads = Math.floor(weakenThreads * availableRatio)
+			const availableGrowThreads = Math.floor(growThreads * availableRatio)
+			const availableHackThreads = Math.floor(hackThreads * availableRatio)
+			if(Math.min(availableWeakenThreads, availableGrowThreads, availableHackThreads) < 1) continue
+			const totalRamForPartialRun = (hackscriptRam * availableHackThreads) + (growscriptRam * availableGrowThreads) + (weakenscriptRam * availableWeakenThreads)
+
+			ns.tprint(`Startings scripts on ${sourceHostname}, available RAM: ${availableRam}`)
+			ns.tprint(`Partial ratio : ${availableRatio}`)
+			ns.tprint(`Partial Threads W:${availableWeakenThreads},G:${availableGrowThreads},H:${availableHackThreads}`)
+			ns.tprint(`Required RAM for partial hack from ${sourceHostname}: ` + totalRamForPartialRun)
+			const createdDifficulty = availableGrowThreads * 0.004 + availableHackThreads + 0.002
+			const removedDifficulty = availableWeakenThreads * 0.05
+			ns.tprint(`Difficulty: ${createdDifficulty} - ${removedDifficulty} = ${createdDifficulty - removedDifficulty}`)
+
+			const id = time + '-' + run
+			//ns.exec(WEAKEN_SCRIPT, sourceHostname, weakenThreads, targetHostname, weakSleep + run * sleepPerRun, id);
+			//ns.exec(GROW_SCRIPT, sourceHostname, growThreads, targetHostname, growSleep + run * sleepPerRun, id);
+			//ns.exec(HACK_SCRIPT, sourceHostname, hackThreads, targetHostname, hackSleep + run * sleepPerRun, id);
+			run++
+
+			if (run % maxRunsPerBatch === 0) {
+				await ns.sleep(1)
+			}
+			*/
