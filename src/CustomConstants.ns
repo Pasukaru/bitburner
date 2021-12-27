@@ -1,0 +1,13 @@
+import { CONSTANTS } from 'Constants.ns'
+
+export const CUSTOM_CONSTANTS = {
+	ServerGrowthFortifyAmount: CONSTANTS.ServerFortifyAmount * 2,
+	HackScript: 'hack.ns',
+	HackScriptRam: 1.7,
+	GrowScript: 'grow.ns',
+	GrowScriptRam: 1.75,
+	GrowTimeMultiplier: 3.2,
+	WeakenScript: 'weaken.ns',
+	WeakenScriptRam: 1.75,
+	WeakenTimeMultiplier: 4
+}
