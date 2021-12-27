@@ -1,0 +1,249 @@
+import { CONSTANTS } from 'Constants.ns'
+import { CUSTOM_CONSTANTS } from 'CustomConstants.ns'
+import { BitNodeMultipliers } from 'BitNodeMultipliers.ns'
+
+export function hackPercent(server, player) {
+    const balanceFactor = 240;
+    const difficultyMult = (100 - server.hackDifficulty) / 100;
+    const skillMult = (player.hacking - (server.requiredHackingSkill - 1)) / player.hacking;
+    const percentMoneyHacked = (difficultyMult * skillMult * player.hacking_money_mult) / balanceFactor;
+    if (percentMoneyHacked < 0) {
+        debugger;
+        return 0;
+    }
+    if (percentMoneyHacked > 1) {
+        return 1;
+    }
+    return percentMoneyHacked * 1//BitNodeMultipliers.ScriptHackMoney;
+}
+
+export function minHackPercent(server, player) {
+    const balanceFactor = 240;
+    const difficultyMult = (100 - server.minDifficulty) / 100;
+    const skillMult = (player.hacking - (server.requiredHackingSkill - 1)) / player.hacking;
+    const percentMoneyHacked = (difficultyMult * skillMult * player.hacking_money_mult) / balanceFactor;
+    if (percentMoneyHacked < 0) {
+        return 0;
+    }
+    if (percentMoneyHacked > 1) {
+        return 1;
+    }
+    return percentMoneyHacked * 1//BitNodeMultipliers.ScriptHackMoney;
+}
+
+/** 
+ * @param {Server} server
+ * @param {number} threads
+ * @param {Player} player
+ * @param {number} cores
+ * @param {NS} ns
+ * */
+export function growPercent(server, threads, player, cores = 1) {
+    const numServerGrowthCycles = Math.max(Math.floor(threads), 0);
+
+    const growthRate = 1.03//CONSTANTS.ServerBaseGrowthRate;
+    let adjGrowthRate = 1 + (growthRate - 1) / server.hackDifficulty;
+    if (adjGrowthRate > 1.0035/*CONSTANTS.ServerMaxGrowthRate*/) {
+        adjGrowthRate = 1.0035/*CONSTANTS.ServerMaxGrowthRate*/;
+    }
+    const serverGrowthPercentage = server.serverGrowth / 100;
+    const numServerGrowthCyclesAdjusted =
+        numServerGrowthCycles * serverGrowthPercentage * 1//BitNodeMultipliers.ServerGrowthRate;
+    const coreBonus = 1 + (cores - 1) / 16;
+    return Math.pow(adjGrowthRate, numServerGrowthCyclesAdjusted * player.hacking_grow_mult * coreBonus);
+}
+
+export function weakenPercent(threads, cores = 1) {
+    const coreBonus = 1 + (cores - 1) / 16
+    return threads * coreBonus
+}
+
+// https://github.com/danielyxie/bitburner/blob/master/src/NetscriptFunctions.ts#L689
+export function weakenAnalyze(threads, cores = 1) {
+    const coreBonus = 1 + (cores - 1) / 16
+    return 0.05 * threads * coreBonus
+}
+
+/** 
+ * @param {Server} server
+ * @param {Player} player
+ * */
+export function weakenTime(server, player) {
+    return utilCalculateHackingTime(server, player) * CUSTOM_CONSTANTS.WeakenTimeMultiplier
+}
+
+/** 
+ * @param {Server} server
+ * @param {Player} player
+ * */
+export function growTime(server, player) {
+    return utilCalculateHackingTime(server, player) * CUSTOM_CONSTANTS.GrowTimeMultiplier
+}
+
+/** 
+ * @param {Server} server
+ * @param {Player} player
+ * */
+export function hackTime(server, player) {
+    return utilCalculateHackingTime(server, player);
+}
+
+/** 
+ * @param {Server} server
+ * @param {Player} player
+ * */
+export function minWeakenTime(server, player) {
+    return utilCalculateHackingTime(server, player, true) * CUSTOM_CONSTANTS.WeakenTimeMultiplier
+}
+
+/** 
+ * @param {Server} server
+ * @param {Player} player
+ * */
+export function minHackTime(server, player) {
+    return utilCalculateHackingTime(server, player, true)
+}
+
+/** 
+ * @param {Server} server
+ * @param {Player} player
+ * */
+export function minGrowTime(server, player) {
+    return utilCalculateHackingTime(server, player, true) * CUSTOM_CONSTANTS.GrowTimeMultiplier
+}
+
+function utilCalculateIntelligenceBonus(intelligence, weight = 1) {
+    return 1 + (weight * Math.pow(intelligence, 0.8)) / 600;
+}
+
+/** 
+ * @param {Server} server
+ * @param {Player} player
+ * @param {boolean} minDifficulty
+ * */
+// https://github.com/danielyxie/bitburner/blob/master/src/Hacking.ts#L66
+function utilCalculateHackingTime(server, player, minDifficulty) {
+    if(server.requiredHackingSkill == null) throw new Error('Missing server.requiredHackingSkill')
+    if(server.minDifficulty == null) throw new Error('Missing server.requiredHackingSkill')
+    if(server.hackDifficulty == null) throw new Error('Missing server.hackDifficulty')
+    if(player.hacking == null) throw new Error('Missing player.hacking')
+    if(player.hacking_speed_mult == null) throw new Error('Missing player.hacking_speed_mult')
+    if(player.intelligence == null) throw new Error('Missing player.intelligence')
+    const difficultyMult = server.requiredHackingSkill * (minDifficulty ? server.minDifficulty : server.hackDifficulty);
+
+    const baseDiff = 500;
+    const baseSkill = 50;
+    const diffFactor = 2.5;
+    let skillFactor = diffFactor * difficultyMult + baseDiff;
+    skillFactor /= player.hacking + baseSkill;
+    const hackTimeMultiplier = 5;
+    const hackingTime =
+        (hackTimeMultiplier * skillFactor) /
+        (player.hacking_speed_mult * utilCalculateIntelligenceBonus(player.intelligence, 1));
+    return hackingTime * 1000;
+}
+
+/** 
+ * @param {Server} sourceServer
+ * @param {Server} targetServer
+ * */
+export function weakenThreadsRequired(sourceServer, targetServer) {
+    const difficultyToReduce = targetServer.hackDifficulty - targetServer.minDifficulty
+    const reductionPerThread = weakenAnalyze(1, sourceServer.cpuCores)
+    return Math.ceil(difficultyToReduce / reductionPerThread)
+}
+
+/** 
+ * @param {Server} sourceServer
+ * @param {Server} targetServer
+ * */
+export function maxWeakenThreads(sourceServer, targetServer) {
+    const requiredThreads = weakenThreadsRequired(sourceServer, targetServer)
+    const maxWeakenThreads = Math.floor((sourceServer.maxRam - sourceServer.ramUsed) / CUSTOM_CONSTANTS.WeakenScriptRam)
+    return Math.min(requiredThreads, maxWeakenThreads)
+}
+
+/** 
+ * @param {Player} player
+ * @param {Server} sourceServer
+ * @param {Server} targetServer
+ * **/
+export function maxGrowthThreads(player, sourceServer, targetServer) {
+    const growth = targetServer.moneyMax / Math.max(1, targetServer.moneyAvailable);
+    return numCycleForGrowth(targetServer, player, growth, sourceServer.cpuCores)
+}
+
+/** 
+ * @param {Player} player
+ * @param {Server} sourceServer
+ * @param {Server} targetServer
+ * @param {NS} NS for debugging
+ * @return {Array<number>} Array with two numbers. [growThreads, weakenThreads]
+ * **/
+export function maxGrowAndWeaken(player, sourceServer, targetServer, ns) {
+    const ramPerScript = Math.min(CUSTOM_CONSTANTS.GrowScriptRam, CUSTOM_CONSTANTS.WeakenScriptRam)
+    const requiredGrowThreads = Math.ceil(maxGrowthThreads(player, sourceServer, targetServer))
+    const reductionPerWeak = weakenAnalyze(1, sourceServer.cpuCores)
+    const weaksPerGrow = CUSTOM_CONSTANTS.ServerGrowthFortifyAmount / reductionPerWeak
+    const maxGrowThreads = Math.floor((sourceServer.maxRam - sourceServer.ramUsed) / ramPerScript)
+    const effectiveGrowCost = maxGrowThreads + maxGrowThreads * weaksPerGrow
+    const ratio = maxGrowThreads / effectiveGrowCost
+    const effectiveGrowThreads = Math.min(requiredGrowThreads, Math.floor(maxGrowThreads * ratio))
+    const effectiveWeakThreads = Math.ceil(effectiveGrowThreads * weaksPerGrow)
+    if(ns){
+        ns.tprint(`ramPerScript: ${ramPerScript}`)
+        ns.tprint(`requiredGrowThreads: ${requiredGrowThreads}`)
+        ns.tprint(`reductionPerWeak: ${reductionPerWeak}`)
+        ns.tprint(`weaksPerGrow: ${weaksPerGrow}`)
+        ns.tprint(`maxGrowThreads: ${maxGrowThreads}`)
+        ns.tprint(`effectiveGrowCost: ${effectiveGrowCost}`)
+        ns.tprint(`maxGrowThreads: ${maxGrowThreads}`)
+        ns.tprint(`effectiveGrowThreads: ${effectiveGrowThreads}`)
+        ns.tprint(`effectiveWeakThreads: ${effectiveWeakThreads}`)
+    }
+    return {
+        growThreads: effectiveGrowThreads,
+        weakenThreads: effectiveWeakThreads,
+        isFinished: requiredGrowThreads === 0,
+        canRun: effectiveGrowThreads > 0,
+        willFinish: effectiveGrowThreads === requiredGrowThreads
+    }
+}
+
+/** 
+ * @param {Server} server 
+ * @param {Player} player
+ * @param {number} growth Multiplier by which to grow the server
+ * @param {number} cores
+ * **/
+// https://github.com/danielyxie/bitburner/blob/ce0fb7a383ee10c06def3658c039eacd35360986/src/NetscriptFunctions.ts#L621
+export function growthAnalyze(server, player, growth, cores = 1) {
+    return numCycleForGrowth(server, player, growth, cores)
+}
+
+/** 
+ * @param {Server} server
+ * @param {Player} player
+ * @param {number} growth Multiplier by which to grow the server
+ * @param {number} cores
+ * **/
+// https://github.com/danielyxie/bitburner/blob/ce0fb7a383ee10c06def3658c039eacd35360986/src/Server/ServerHelpers.ts#L49
+export function numCycleForGrowth(server, player, growth, cores = 1) {
+    let ajdGrowthRate = 1 + (CONSTANTS.ServerBaseGrowthRate - 1) / server.hackDifficulty;
+    if (ajdGrowthRate > CONSTANTS.ServerMaxGrowthRate) {
+        ajdGrowthRate = CONSTANTS.ServerMaxGrowthRate;
+    }
+
+    const serverGrowthPercentage = server.serverGrowth / 100;
+
+    const coreBonus = 1 + (cores - 1) / 16;
+    const cycles =
+        Math.log(growth) /
+        (Math.log(ajdGrowthRate) *
+            player.hacking_grow_mult *
+            serverGrowthPercentage *
+            BitNodeMultipliers.ServerGrowthRate *
+            coreBonus);
+
+    return cycles;
+}
