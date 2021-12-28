@@ -1,48 +1,277 @@
+import { CONSTANTS } from 'Constants.ns'
 import { CUSTOM_CONSTANTS } from 'CustomConstants.ns'
 import { spawnHackScripts } from 'functions.ns'
 import * as formulas from 'formulas.ns'
 import * as CONFIG from 'config.ns'
+
+const sleepPerStep = 10
+const sleepPerRun = sleepPerStep * 3
 
 /** 
  * @param {NS} ns 
  * */
 export async function main(ns) {
 	// disableLogs(ns)
-	await ns.sleep(1000)
-	await hackPrimedServer(ns)
-	ns.run('spider.ns', 1, 'weakHack.ns')
+	while (true) {
+		await hackPrimedServer(ns, ns.args[0])
+		await ns.sleep(1000)
+	}
+	// ns.run('spider.ns', 1, 'weakHack.ns')
 }
 
 /** 
  * @param {NS} ns 
  * @param {string} targetHostname
  * **/
-export async function hackPrimedServer(ns) {
-	const targetHostname = 'foodnstuff'
+export async function hackPrimedServer(ns, targetHostname = 'n00dles', sourceOnly = false) {
+	const targetServer = getServerCheap(ns, targetHostname)
+	const canGrow = targetServer.moneyAvailable < targetServer.moneyMax
+	const canWeaken = canGrow || targetServer.hackDifficulty > targetServer.minDifficulty
+	const isPrimed = !canGrow && !canWeaken
+
+	const sourceHostnames = sourceOnly ? [ns.getHostname()] : CONFIG.getHackableServers()
+
+	if (!isPrimed) {
+		await prime(ns, targetHostname, sourceHostnames)
+		return
+	}
+
+	await optimizedRatioHack(ns, targetHostname, sourceHostnames)
+}
+
+/** 
+ * @param {NS} ns
+ *  **/
+async function optimizedRatioHack(ns, targetHostname = 'n00dles', sourceHostnames = [""]) {
+	const time = new Date().getTime()
 	const player = getPlayerCheap(ns)
 	const targetServer = getServerCheap(ns, targetHostname)
 	const WeakenTime = Math.ceil(formulas.weakenTime(targetServer, player));
 	const GrowTime = Math.ceil(formulas.growTime(targetServer, player));
 	const HackTime = Math.ceil(formulas.hackTime(targetServer, player));
+	const stepTime = Math.max(WeakenTime, GrowTime, HackTime)
 
-	const HackOffset = 10
-	const GrowOffset = 5
+	const weakSleep = 0
+	const growSleep = weakSleep - sleepPerStep + WeakenTime - GrowTime
+	const hackSleep = weakSleep - sleepPerStep * 2 + WeakenTime - HackTime
 
-	for (const sourceHostname of CONFIG.getHackableServers()) {
-		const sourceServer = getServerCheap(ns, sourceHostname)
-		const freeRam = sourceServer.maxRam - sourceServer.ramUsed
+	const hackPercent = formulas.minHackPercent(targetServer, player)
+	/*
+	const HPercent = (formulas.minHackPercent(targetServer, player) * 100);
+	const GPercent = (formulas.growPercent(targetServer, 1, player, cores, ns));
+	const growThreads = Math.floor(((5 / (GPercent - 1)))) || 1;
+	const hackThreads = Math.floor((50 / HPercent)) || 1;
+	*/
+	const maxHackThreadsToDrain = Math.floor(0.5 / (hackPercent))
+	// ns.tprint(`maxHackThreadsToDrain: `, maxHackThreadsToDrain)
+	const maxNumberOfHacks = 100
 
-		const totalThreads = freeRam / Math.max(CUSTOM_CONSTANTS.WeakenScriptRam, CUSTOM_CONSTANTS.GrowScriptRam, CUSTOM_CONSTANTS.HackScriptRam)
-		if(totalThreads < 3) continue
-		const scriptThreads = Math.floor(totalThreads / 3)
-
-		const weakSleep = 0
-		const growSleep = weakSleep + WeakenTime - GrowTime - GrowOffset
-		const hackSleep = weakSleep + WeakenTime - HackTime - HackOffset
-		spawnHackScripts(ns, sourceHostname, targetHostname, scriptThreads, weakSleep, scriptThreads, growSleep, scriptThreads, hackSleep, 0)
+	function calcFreeRam(server) {
+		return server.maxRam - server.ramUsed - (server.hostname === 'home' ? 10 : 0)
 	}
 
-	await ns.sleep(WeakenTime + 50)
+	const sourceServers = sourceHostnames
+		.map(hostname => getServerCheap(ns, hostname))
+
+	sourceServers.sort((a, b) => calcFreeRam(b) - calcFreeRam(a))
+
+	const hacksPerServer = {}
+
+	for (const sourceServer of sourceServers) {
+		const sourceHostname = sourceServer.hostname
+		const freeRam = calcFreeRam(sourceServer)
+		// ns.tprint(`freeRam: `, freeRam)
+
+		var ht = Math.min(maxHackThreadsToDrain, Math.floor(freeRam / CUSTOM_CONSTANTS.HackScriptRam))
+		// ns.tprint(`ht: `, ht)
+		var [wt, gt] = [-1, -1]
+		var gt = -1
+		var wt = -1
+		var ramPerBatch = -1
+
+		do {
+			ht = Math.floor(ht * 0.9)
+			const wtgt = formulas.calculateWTGT(sourceServer, targetServer, player, ht)
+			//ns.tprint(`wt: `, wt)
+			//ns.tprint(`gt: `, gt)
+			//ns.tprint(`ht: `, ht)
+			wt = wtgt[0]
+			gt = wtgt[1]
+			ramPerBatch = formulas.totalHackingScriptsRam(wt, gt, ht)
+		} while (ramPerBatch > freeRam && ht > 1)
+
+		const batchIsValid = ht > 0 && gt > 0 && wt > 0
+		const smallestBatchFits = ramPerBatch <= freeRam
+
+
+		if (batchIsValid && smallestBatchFits) {
+			hacksPerServer[sourceHostname] = {
+				server: sourceServer,
+				freeRam,
+				batch: [wt, gt, ht],
+				repeats: Math.floor(freeRam / ramPerBatch)
+			}
+		}
+	}
+
+	function dbgHPS() {
+		const x = {}
+		Object.keys(hacksPerServer).forEach(key => {
+			const root = hacksPerServer[key]
+			const obj = { ...root }
+			delete obj.server
+			obj.host = key
+			x[key] = obj
+		})
+		// ns.tprint(JSON.stringify(x, undefined, 2))
+	}
+
+	dbgHPS()
+
+	const availableSourceHostnames = Object.keys(hacksPerServer)
+	if (availableSourceHostnames.length < 1) {
+		ns.tprint('TODO: Unable to spawn ratio hacks. Will spawn super weak hacks instead...')
+		return false
+	}
+
+	for (const sourceHostname of availableSourceHostnames) {
+		const info = hacksPerServer[sourceHostname]
+		const [wt, gt, ht] = info.batch
+		const repeats = info.repeats
+		for (let i = 0; i < repeats; i++) {
+			spawnHackScripts(ns, sourceHostname, targetHostname, wt, weakSleep, gt, growSleep, ht, hackSleep, 0, "weakHack-hacking-" + time)
+			await ns.sleep(sleepPerRun)
+		}
+	}
+
+	await ns.sleep(stepTime + sleepPerRun)
+
+	return true
+}
+
+/** 
+ * @param {NS} ns
+ *  **/
+async function ratioHack(ns, targetHostname = 'n00dles', sourceHostnames = [""]) {
+	const time = new Date().getTime()
+	const player = getPlayerCheap(ns)
+	const targetServer = getServerCheap(ns, targetHostname)
+	const WeakenTime = Math.ceil(formulas.weakenTime(targetServer, player));
+	const GrowTime = Math.ceil(formulas.growTime(targetServer, player));
+	const HackTime = Math.ceil(formulas.hackTime(targetServer, player));
+	const stepTime = Math.max(WeakenTime, GrowTime, HackTime)
+
+	const weakSleep = 0
+	const growSleep = weakSleep - sleepPerStep + WeakenTime - GrowTime
+	const hackSleep = weakSleep - sleepPerStep * 2 + WeakenTime - HackTime
+
+	const hackPercent = formulas.minHackPercent(targetServer, player)
+
+	var hacking = false
+
+	for (const sourceHostname of sourceHostnames) {
+		const sourceServer = getServerCheap(ns, sourceHostname)
+		const freeRam = sourceServer.maxRam - sourceServer.ramUsed - (sourceHostname === 'home' ? 10 : 0)
+		const diffPerWeak = formulas.weakenAnalyze(1, sourceServer.cpuCores)
+		var ht = Math.floor(freeRam / CUSTOM_CONSTANTS.HackScriptRam)
+		var gt = -1
+		var wt = -1
+		var hp = -1
+		var ratio = -1
+		var difficulty = -1
+		var ramUsed = -1
+
+		function calculateWT() {
+			hp = hackPercent * ht
+			ratio = targetServer.moneyMax / (1 + targetServer.moneyMax - targetServer.moneyMax * hp)
+			gt = Math.ceil(formulas.growthAnalyze(targetServer, player, ratio, sourceServer.cpuCores))
+			// ns.tprint('Actual: ' + gt)
+			// ns.tprint('Should: ' + ns.growthAnalyze(targetHostname, ratio, sourceServer.cpuCores))
+			difficulty = ht * CONSTANTS.ServerFortifyAmount + gt * 2 * CONSTANTS.ServerFortifyAmount
+			wt = Math.ceil(difficulty / diffPerWeak)
+		}
+
+		function calculateRamUsed() {
+			ramUsed = wt * CUSTOM_CONSTANTS.WeakenScriptRam
+				+ gt * CUSTOM_CONSTANTS.GrowScriptRam
+				+ ht * CUSTOM_CONSTANTS.HackScriptRam
+		}
+
+		do {
+			ht = Math.floor(ht * 0.9)
+			calculateWT()
+			calculateRamUsed()
+		} while (ramUsed > freeRam && ht > 1)
+
+		if (ramUsed <= freeRam && ht > 0 && gt > 0 && wt > 0) {
+			// ns.tprint('hp         : ' + hp)
+			// ns.tprint('ratio      : ' + ratio)
+			// ns.tprint('difficulty : ' + diffPerWeak)
+			// ns.tprint('diffPerWeak: ' + diffPerWeak)
+			// ns.tprint('ht    : ' + ht)
+			// ns.tprint('gt    : ' + gt)
+			// ns.tprint('wt    : ' + wt)
+			// ns.tprint('Money After: ' + (targetServer.moneyMax - targetServer.moneyMax * hp))
+			spawnHackScripts(ns, sourceHostname, targetHostname, wt, weakSleep, gt, growSleep, ht, hackSleep, 0, "weakHack-hacking-" + time)
+			hacking = true
+			await ns.sleep(sleepPerRun)
+			ns.exit()
+		}
+	}
+
+	if (hacking) {
+		await ns.sleep(stepTime + sleepPerRun)
+	} else {
+		ns.tprint('TODO: Unable to spawn ratio hacks. Will spawn super weak hacks instead...')
+	}
+}
+
+/** 
+ * @param {NS} ns
+ *  **/
+async function prime(ns, targetHostname = 'n00dles', sourceHostnames = [""]) {
+	const time = new Date().getTime()
+	const player = getPlayerCheap(ns)
+	const targetServer = getServerCheap(ns, targetHostname)
+	const canGrow = targetServer.moneyAvailable < targetServer.moneyMax
+	const canWeaken = canGrow || targetServer.hackDifficulty > targetServer.minDifficulty
+	const tasks = canGrow + canWeaken
+
+	const WeakenTime = Math.ceil(formulas.weakenTime(targetServer, player));
+	const GrowTime = Math.ceil(formulas.growTime(targetServer, player));
+	const HackTime = Math.ceil(formulas.hackTime(targetServer, player));
+
+	const weakSleep = 0
+	const growSleep = weakSleep - sleepPerStep + WeakenTime - GrowTime
+	const hackSleep = weakSleep - sleepPerStep * 2 + WeakenTime - HackTime
+
+	// const player = getPlayerCheap(ns)
+	// const targetServer = getServerCheap(ns, targetHostname)
+	var priming = false;
+	for (const sourceHostname of sourceHostnames) {
+		const sourceServer = getServerCheap(ns, sourceHostname)
+		const freeRam = sourceServer.maxRam - sourceServer.ramUsed - (sourceHostname === 'home' ? 10 : 0)
+
+		const totalThreads = freeRam / Math.max(CUSTOM_CONSTANTS.WeakenScriptRam, CUSTOM_CONSTANTS.GrowScriptRam, CUSTOM_CONSTANTS.HackScriptRam)
+		if (totalThreads < tasks) continue
+		const scriptThreads = Math.floor(totalThreads / tasks)
+		const wt = scriptThreads * canWeaken
+		const gt = scriptThreads * canGrow
+		const ht = 0
+		var additionalWt = 0
+		if (sourceHostname !== 'home') {
+			const remainingRam = freeRam
+				- wt * CUSTOM_CONSTANTS.WeakenScriptRam
+				- gt * CUSTOM_CONSTANTS.GrowScriptRam
+			additionalWt = Math.floor(remainingRam / CUSTOM_CONSTANTS.WeakenScriptRam)
+		}
+		spawnHackScripts(ns, sourceHostname, targetHostname, wt + additionalWt, weakSleep, gt, growSleep, ht, hackSleep, 0, "weakHack-priming-" + time)
+		await ns.sleep(sleepPerRun)
+	}
+
+	if (priming) {
+		await ns.sleep(WeakenTime + sleepPerRun)
+	}
 }
 
 /** 
