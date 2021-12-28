@@ -123,12 +123,12 @@ function utilCalculateIntelligenceBonus(intelligence, weight = 1) {
  * */
 // https://github.com/danielyxie/bitburner/blob/master/src/Hacking.ts#L66
 function utilCalculateHackingTime(server, player, minDifficulty) {
-    if(server.requiredHackingSkill == null) throw new Error('Missing server.requiredHackingSkill')
-    if(server.minDifficulty == null) throw new Error('Missing server.requiredHackingSkill')
-    if(server.hackDifficulty == null) throw new Error('Missing server.hackDifficulty')
-    if(player.hacking == null) throw new Error('Missing player.hacking')
-    if(player.hacking_speed_mult == null) throw new Error('Missing player.hacking_speed_mult')
-    if(player.intelligence == null) throw new Error('Missing player.intelligence')
+    if (server.requiredHackingSkill == null) throw new Error('Missing server.requiredHackingSkill')
+    if (server.minDifficulty == null) throw new Error('Missing server.requiredHackingSkill')
+    if (server.hackDifficulty == null) throw new Error('Missing server.hackDifficulty')
+    if (player.hacking == null) throw new Error('Missing player.hacking')
+    if (player.hacking_speed_mult == null) throw new Error('Missing player.hacking_speed_mult')
+    if (player.intelligence == null) throw new Error('Missing player.intelligence')
     const difficultyMult = server.requiredHackingSkill * (minDifficulty ? server.minDifficulty : server.hackDifficulty);
 
     const baseDiff = 500;
@@ -185,12 +185,12 @@ export function maxGrowAndWeaken(player, sourceServer, targetServer, ns) {
     const requiredGrowThreads = Math.ceil(maxGrowthThreads(player, sourceServer, targetServer))
     const reductionPerWeak = weakenAnalyze(1, sourceServer.cpuCores)
     const weaksPerGrow = CUSTOM_CONSTANTS.ServerGrowthFortifyAmount / reductionPerWeak
-    const maxGrowThreads = Math.floor((sourceServer.maxRam - sourceServer.ramUsed) / ramPerScript)
+    const maxGrowThreads = Math.floor((sourceServer.maxRam - sourceServer.ramUsed - 10) / ramPerScript)
     const effectiveGrowCost = maxGrowThreads + maxGrowThreads * weaksPerGrow
     const ratio = maxGrowThreads / effectiveGrowCost
     const effectiveGrowThreads = Math.min(requiredGrowThreads, Math.floor(maxGrowThreads * ratio))
     const effectiveWeakThreads = Math.ceil(effectiveGrowThreads * weaksPerGrow)
-    if(ns){
+    if (ns) {
         ns.tprint(`ramPerScript: ${ramPerScript}`)
         ns.tprint(`requiredGrowThreads: ${requiredGrowThreads}`)
         ns.tprint(`reductionPerWeak: ${reductionPerWeak}`)
@@ -246,4 +246,35 @@ export function numCycleForGrowth(server, player, growth, cores = 1) {
             coreBonus);
 
     return cycles;
+}
+
+/**
+ * @param {Server} sourceServer
+ * @param {Server} targetServer
+ * @param {Player} player
+ * @param {number} hackThreads number of hack threads that are going to be executed
+ * @return {Array<number>} Array [weakenThreads, hackThreads] containing the number of weakens and grows required to offset the hackThreads
+ * */
+export function calculateWTGT(sourceServer, targetServer, player, hackThreads) {
+    const hackPercent = minHackPercent(targetServer, player) 
+    const diffPerWeak = weakenAnalyze(1, sourceServer.cpuCores)
+    const totalHackPercent = hackPercent * hackThreads
+    const ratio = targetServer.moneyMax / (1 + targetServer.moneyMax - targetServer.moneyMax * totalHackPercent)
+    const growThreads = Math.ceil(growthAnalyze(targetServer, player, ratio, sourceServer.cpuCores))
+    const difficulty =
+        hackThreads * CONSTANTS.ServerFortifyAmount +
+        growThreads * 2 * CONSTANTS.ServerFortifyAmount
+    const weakenThreads = Math.ceil(difficulty / diffPerWeak)
+    return [weakenThreads, growThreads]
+}
+
+/**
+ * @param {number} weakenThreads
+ * @param {number} growThreads
+ * @param {number} hackThreads
+ * */
+export function totalHackingScriptsRam(weakenThreads, growThreads, hackThreads) {
+    return weakenThreads * CUSTOM_CONSTANTS.WeakenScriptRam
+        + growThreads * CUSTOM_CONSTANTS.GrowScriptRam
+        + hackThreads * CUSTOM_CONSTANTS.HackScriptRam
 }
